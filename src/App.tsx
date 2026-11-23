@@ -1,6 +1,68 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from './lib/supabase';
-import { Car, Plus, Search, LogOut, CheckCircle2, Wrench, AlertCircle } from 'lucide-react';
+import { Car, ChevronDown, Plus, Search, LogOut, CheckCircle2, Wrench, AlertCircle } from 'lucide-react';
+import {
+  siAudi,
+  siBmw,
+  siCitroen,
+  siDacia,
+  siDsautomobiles,
+  siFiat,
+  siFord,
+  siHonda,
+  siHyundai,
+  siJeep,
+  siKia,
+  siMazda,
+  siMini,
+  siMitsubishi,
+  siNissan,
+  siOpel,
+  siPeugeot,
+  siPorsche,
+  siRenault,
+  siSeat,
+  siSkoda,
+  siSubaru,
+  siSuzuki,
+  siTesla,
+  siToyota,
+  siVolkswagen,
+  siVolvo,
+  type SimpleIcon,
+} from 'simple-icons';
+
+const CAR_BRANDS: { name: string; icon: SimpleIcon }[] = [
+  { name: 'Audi', icon: siAudi },
+  { name: 'BMW', icon: siBmw },
+  { name: 'Citroën', icon: siCitroen },
+  { name: 'Dacia', icon: siDacia },
+  { name: 'DS Automobiles', icon: siDsautomobiles },
+  { name: 'Fiat', icon: siFiat },
+  { name: 'Ford', icon: siFord },
+  { name: 'Honda', icon: siHonda },
+  { name: 'Hyundai', icon: siHyundai },
+  { name: 'Jeep', icon: siJeep },
+  { name: 'Kia', icon: siKia },
+  { name: 'Mazda', icon: siMazda },
+  { name: 'MINI', icon: siMini },
+  { name: 'Mitsubishi', icon: siMitsubishi },
+  { name: 'Nissan', icon: siNissan },
+  { name: 'Opel', icon: siOpel },
+  { name: 'Peugeot', icon: siPeugeot },
+  { name: 'Porsche', icon: siPorsche },
+  { name: 'Renault', icon: siRenault },
+  { name: 'SEAT', icon: siSeat },
+  { name: 'ŠKODA', icon: siSkoda },
+  { name: 'Subaru', icon: siSubaru },
+  { name: 'Suzuki', icon: siSuzuki },
+  { name: 'Tesla', icon: siTesla },
+  { name: 'Toyota', icon: siToyota },
+  { name: 'Volkswagen', icon: siVolkswagen },
+  { name: 'Volvo', icon: siVolvo },
+];
+
+const OTHER_MAKE = '__other__';
 
 const STAGES = [
   'Είσοδος',
@@ -26,10 +88,11 @@ interface RepairJob {
   damage_notes: string;
   insurance_company: string | null;
   entry_date: string;
+  is_active: boolean;
   vehicles: {
     id: string;
-    license_plate: string;
-    make_model: string;
+    plate: string;
+    make: string;
     color: string | null;
     customers: {
       full_name: string;
@@ -41,6 +104,14 @@ interface RepairJob {
 // Κανονικοποίηση πινακίδας (π.χ. "ικβ 12-34" -> "ΙΚΒ1234")
 function normalizePlate(plate: string) {
   return plate.toUpperCase().replace(/[^Α-ΩA-Z0-9]/g, '');
+}
+
+function BrandMark({ icon, className }: { icon: SimpleIcon; className?: string }) {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" className={className}>
+      <path fill="currentColor" d={icon.path} />
+    </svg>
+  );
 }
 
 export default function App() {
@@ -55,12 +126,17 @@ export default function App() {
   // App states
   const [jobs, setJobs] = useState<RepairJob[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [showDelivered, setShowDelivered] = useState(false);
   const [selectedJob, setSelectedJob] = useState<RepairJob | null>(null);
   const [showNewModal, setShowNewModal] = useState(false);
 
   // New Entry Form states
   const [plate, setPlate] = useState('');
-  const [makeModel, setMakeModel] = useState('');
+  const [selectedMake, setSelectedMake] = useState('');
+  const [customMake, setCustomMake] = useState('');
+  const [model, setModel] = useState('');
+  const [showBrandPicker, setShowBrandPicker] = useState(false);
+  const [brandSearch, setBrandSearch] = useState('');
   const [color, setColor] = useState('');
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
@@ -102,10 +178,11 @@ export default function App() {
         damage_notes,
         insurance_company,
         entry_date,
+        is_active,
         vehicles (
           id,
-          license_plate,
-          make_model,
+          plate,
+          make,
           color,
           customers (
             full_name,
@@ -113,7 +190,6 @@ export default function App() {
           )
         )
       `)
-      .eq('is_active', true)
       .is('archived_at', null)
       .order('entry_date', { ascending: false });
 
@@ -125,7 +201,8 @@ export default function App() {
   async function handleCreateEntry(e: React.FormEvent) {
     e.preventDefault();
     const cleanPlate = normalizePlate(plate);
-    if (!cleanPlate || !makeModel) return;
+    const make = selectedMake === OTHER_MAKE ? customMake.trim() : selectedMake;
+    if (!cleanPlate || !make || !model.trim()) return;
     setSaving(true);
 
     try {
@@ -133,7 +210,7 @@ export default function App() {
       let { data: existingVehicle } = await supabase
         .from('vehicles')
         .select('id, customer_id')
-        .eq('license_plate', cleanPlate)
+        .eq('plate', cleanPlate)
         .maybeSingle();
 
       let vehicleId = existingVehicle?.id;
@@ -153,8 +230,8 @@ export default function App() {
         const { data: newVehicle, error: vErr } = await supabase
           .from('vehicles')
           .insert({
-            license_plate: cleanPlate,
-            make_model: makeModel.trim(),
+            plate: cleanPlate,
+            make: `${make} ${model.trim()}`,
             color: color.trim() || null,
             customer_id: customerId,
           })
@@ -189,7 +266,11 @@ export default function App() {
 
       // Καθαρισμός φόρμας & ανανέωση
       setPlate('');
-      setMakeModel('');
+      setSelectedMake('');
+      setCustomMake('');
+      setModel('');
+      setShowBrandPicker(false);
+      setBrandSearch('');
       setColor('');
       setCustomerName('');
       setCustomerPhone('');
@@ -205,7 +286,7 @@ export default function App() {
   }
 
   async function updateStage(job: RepairJob, newStage: string) {
-    if (!window.confirm(`Να αλλάξει το στάδιο του ${job.vehicles.license_plate} σε "${newStage}";`)) return;
+    if (!window.confirm(`Να αλλάξει το στάδιο του ${job.vehicles.plate} σε "${newStage}";`)) return;
 
     const isDelivered = newStage === 'Παραδόθηκε';
     await supabase
@@ -292,16 +373,18 @@ export default function App() {
     );
   }
 
-  // ΦΙΛΤΡΑΡΙΣΜΑ ΕΝΕΡΓΩΝ ΟΧΗΜΑΤΩΝ
+  // ΦΙΛΤΡΑΡΙΣΜΑ ΕΝΕΡΓΩΝ Ή ΠΑΡΑΔΟΜΕΝΩΝ ΟΧΗΜΑΤΩΝ
   const filteredJobs = jobs.filter((j) => {
     const q = searchQuery.toLowerCase();
-    return (
-      j.vehicles.license_plate.toLowerCase().includes(q) ||
-      j.vehicles.make_model.toLowerCase().includes(q) ||
+    const matchesStatus = showDelivered ? !j.is_active : j.is_active;
+    return matchesStatus && (
+      j.vehicles.plate.toLowerCase().includes(q) ||
+      j.vehicles.make.toLowerCase().includes(q) ||
       (j.vehicles.color && j.vehicles.color.toLowerCase().includes(q)) ||
       (j.vehicles.customers?.full_name && j.vehicles.customers.full_name.toLowerCase().includes(q))
     );
   });
+  const selectedBrand = CAR_BRANDS.find((brand) => brand.name === selectedMake);
 
   return (
     <div className="min-h-screen bg-[#0d0f11] text-zinc-100 pb-24">
@@ -313,7 +396,7 @@ export default function App() {
           </div>
           <div>
             <h1 className="font-bold text-base tracking-wide text-white">ARGOS <span className="text-xs text-emerald-400 font-normal">v0.1</span></h1>
-            <p className="text-[11px] text-zinc-400">{jobs.length} ενεργά οχήματα μέσα</p>
+            <p className="text-[11px] text-zinc-400">{jobs.filter((job) => job.is_active).length} ενεργά οχήματα μέσα</p>
           </div>
         </div>
         <button
@@ -347,11 +430,36 @@ export default function App() {
           </button>
         </div>
 
-        {/* ΛΙΣΤΑ ΕΝΕΡΓΩΝ ΕΠΙΣΚΕΥΩΝ */}
+        <div className="flex gap-2">
+          <button
+            onClick={() => setShowDelivered(false)}
+            className={`flex-1 py-2.5 rounded-xl text-sm font-medium border transition ${
+              !showDelivered
+                ? 'bg-emerald-600 border-emerald-500 text-white'
+                : 'bg-[#16191d] border-zinc-800 text-zinc-400 hover:text-white'
+            }`}
+          >
+            Ενεργά
+          </button>
+          <button
+            onClick={() => setShowDelivered(true)}
+            className={`flex-1 py-2.5 rounded-xl text-sm font-medium border transition ${
+              showDelivered
+                ? 'bg-emerald-600 border-emerald-500 text-white'
+                : 'bg-[#16191d] border-zinc-800 text-zinc-400 hover:text-white'
+            }`}
+          >
+            Παραδομένα / Αρχείο
+          </button>
+        </div>
+
+        {/* ΛΙΣΤΑ ΕΝΕΡΓΩΝ Ή ΠΑΡΑΔΟΜΕΝΩΝ ΕΠΙΣΚΕΥΩΝ */}
         {filteredJobs.length === 0 ? (
           <div className="text-center py-16 bg-[#16191d] rounded-2xl border border-zinc-800/60">
             <Car className="mx-auto text-zinc-600 mb-2" size={32} />
-            <p className="text-zinc-400 text-sm">Δεν βρέθηκαν ενεργά οχήματα.</p>
+            <p className="text-zinc-400 text-sm">
+              {showDelivered ? 'Δεν βρέθηκαν παραδομένα οχήματα.' : 'Δεν βρέθηκαν ενεργά οχήματα.'}
+            </p>
           </div>
         ) : (
           <div className="space-y-3">
@@ -365,10 +473,10 @@ export default function App() {
                   <div>
                     <div className="flex items-center gap-2">
                       <span className="bg-zinc-900 border border-zinc-700 text-emerald-400 font-mono font-bold text-sm px-2.5 py-0.5 rounded-md">
-                        {job.vehicles.license_plate}
+                        {job.vehicles.plate}
                       </span>
                       <span className="font-semibold text-white">
-                        {job.vehicles.make_model}
+                        {job.vehicles.make}
                       </span>
                       {job.vehicles.color && (
                         <span className="text-xs text-zinc-400">({job.vehicles.color})</span>
@@ -406,8 +514,8 @@ export default function App() {
           <div className="bg-[#16191d] border border-zinc-800 w-full max-w-lg rounded-2xl p-5 space-y-5 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
               <div>
-                <span className="text-emerald-400 font-mono font-bold text-lg">{selectedJob.vehicles.license_plate}</span>
-                <h2 className="text-white font-semibold">{selectedJob.vehicles.make_model} {selectedJob.vehicles.color && `• ${selectedJob.vehicles.color}`}</h2>
+                <span className="text-emerald-400 font-mono font-bold text-lg">{selectedJob.vehicles.plate}</span>
+                <h2 className="text-white font-semibold">{selectedJob.vehicles.make} {selectedJob.vehicles.color && `• ${selectedJob.vehicles.color}`}</h2>
               </div>
               <button onClick={() => setSelectedJob(null)} className="text-zinc-400 hover:text-white px-3 py-1 bg-zinc-800 rounded-lg text-sm">
                 Κλείσιμο
@@ -502,13 +610,100 @@ export default function App() {
               </div>
             </div>
 
+            <div className="relative">
+              <label className="block text-xs text-zinc-400 mb-1">Μάρκα *</label>
+              <button
+                type="button"
+                aria-expanded={showBrandPicker}
+                onClick={() => setShowBrandPicker((open) => !open)}
+                className="w-full bg-[#0d0f11] border border-zinc-700 rounded-xl px-3 py-2.5 text-white flex items-center gap-3 text-left"
+              >
+                {selectedMake !== OTHER_MAKE && selectedBrand ? (
+                  <BrandMark
+                    icon={selectedBrand.icon}
+                    className="w-6 h-6 text-emerald-400 shrink-0"
+                  />
+                ) : (
+                  <Car size={22} className="text-emerald-400 shrink-0" />
+                )}
+                <span className="flex-1 truncate">
+                  {selectedMake === OTHER_MAKE ? customMake || 'Άλλη μάρκα' : selectedMake || 'Επίλεξε μάρκα'}
+                </span>
+                <ChevronDown size={18} className="text-zinc-400 shrink-0" />
+              </button>
+
+              {showBrandPicker && (
+                <div className="absolute z-30 mt-2 w-full rounded-xl border border-zinc-700 bg-[#16191d] p-3 shadow-xl">
+                  <input
+                    autoFocus
+                    value={brandSearch}
+                    onChange={(e) => setBrandSearch(e.target.value)}
+                    placeholder="Αναζήτηση μάρκας..."
+                    className="w-full bg-[#0d0f11] border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white"
+                  />
+                  <div className="mt-2 grid max-h-56 grid-cols-2 gap-2 overflow-y-auto">
+                    {CAR_BRANDS.filter((brand) =>
+                      brand.name.toLowerCase().includes(brandSearch.toLowerCase()),
+                    ).map((brand) => (
+                      <button
+                        key={brand.name}
+                        type="button"
+                        onClick={() => {
+                          setSelectedMake(brand.name);
+                          setShowBrandPicker(false);
+                          setBrandSearch('');
+                        }}
+                        className={`flex items-center gap-2 rounded-lg border px-2.5 py-2 text-left text-sm transition ${
+                          selectedMake === brand.name
+                            ? 'border-emerald-500 bg-emerald-500/10 text-white'
+                            : 'border-zinc-800 text-zinc-300 hover:border-zinc-600'
+                        }`}
+                      >
+                        <BrandMark icon={brand.icon} className="h-5 w-5 shrink-0 text-emerald-400" />
+                        <span className="truncate">{brand.name}</span>
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedMake(OTHER_MAKE);
+                        setShowBrandPicker(false);
+                        setBrandSearch('');
+                      }}
+                      className={`flex items-center gap-2 rounded-lg border px-2.5 py-2 text-left text-sm transition ${
+                        selectedMake === OTHER_MAKE
+                          ? 'border-emerald-500 bg-emerald-500/10 text-white'
+                          : 'border-zinc-800 text-zinc-300 hover:border-zinc-600'
+                      }`}
+                    >
+                      <Car size={20} className="shrink-0 text-emerald-400" />
+                      <span className="truncate">Άλλη μάρκα</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {selectedMake === OTHER_MAKE && (
+              <div>
+                <label className="block text-xs text-zinc-400 mb-1">Όνομα μάρκας *</label>
+                <input
+                  required
+                  value={customMake}
+                  onChange={(e) => setCustomMake(e.target.value)}
+                  placeholder="π.χ. Mercedes-Benz"
+                  className="w-full bg-[#0d0f11] border border-zinc-700 rounded-xl px-3 py-2.5 text-white"
+                />
+              </div>
+            )}
+
             <div>
-              <label className="block text-xs text-zinc-400 mb-1">Μάρκα / Μοντέλο *</label>
+              <label className="block text-xs text-zinc-400 mb-1">Μοντέλο *</label>
               <input
                 required
-                value={makeModel}
-                onChange={(e) => setMakeModel(e.target.value)}
-                placeholder="π.χ. Toyota Yaris"
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+                placeholder="π.χ. Yaris"
                 className="w-full bg-[#0d0f11] border border-zinc-700 rounded-xl px-3 py-2.5 text-white"
               />
             </div>
